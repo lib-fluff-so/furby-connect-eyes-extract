@@ -9,13 +9,24 @@ import argparse
 import time
 import numpy as np
 from tqdm import tqdm
-from PIL import Image, ImageDraw
+from PIL import Image
 
 CEL_BYTES = 3072
 CEL_W = CEL_H = 64
 PAL_BYTES = 128
 PAL_COLORS = 64
 T1_ENTRY = 14
+
+ANIM_TYPES = [
+    "eye_right",
+    "eye_left",
+    "l2_right",
+    "l2_left",
+    "l3_right",
+    "l3_left",
+    "l4_right",
+    "l4_left"
+]
 
 
 def parse_pal(data):
@@ -29,7 +40,7 @@ def parse_pal(data):
             G = (val & 0x03E0) >> 2
             B = (val & 0x001F) << 3
             if ci == 0:
-                A = 0  # index 0 = chroma key
+                A = 0
             pal.append((R, G, B, A))
         palettes.append(pal)
     return palettes
@@ -96,7 +107,7 @@ def parse_spr(data):
             bo = t3w * 2
             vals = [u16(bo + j * 2) for j in range(9)]
             assert vals[-1] == 0xFFFF, f"Bad T3 terminator: {vals[-1]:#x}"
-            frame_cache[t3w] = [vals[j * 2] for j in range(4)]
+            frame_cache[t3w] = [(vals[j * 2], vals[j * 2 + 1]) for j in range(4)]
 
     for a in anims:
         a["frames"] = [frame_cache[o] for o in a["t3_offs"]]
@@ -104,33 +115,25 @@ def parse_spr(data):
     return anims
 
 
-_CIRCLE_MASK = None
-
-
-def get_circle_mask():
-    global _CIRCLE_MASK
-    if _CIRCLE_MASK is None:
-        _CIRCLE_MASK = Image.new("L", (128, 128), 0)
-        ImageDraw.Draw(_CIRCLE_MASK).ellipse((0, 0, 127, 127), fill=255)
-    return _CIRCLE_MASK
-
-
-def render_frame(cel_indices, palette, cel_data, circle_mask=False):
+def render_frame(cel_info, palette, cel_data):
     canvas = np.zeros((128, 128, 4), dtype=np.uint8)
     pal_np = np.array(palette, dtype=np.uint8)
 
-    for i, ci in enumerate(cel_indices):
-        px, py = (i % 2) * 64, (i // 2) * 64
+    for i, (ci, flags) in enumerate(cel_info):
+        col = i % 2
+        bit4_set = bool(flags & 0x0004)
+
+        px, py = col * 64, (i // 2) * 64
         cel_indexes = parse_cel(cel_data, ci)
         tile_rgba = pal_np[cel_indexes].reshape(CEL_H, CEL_W, 4)
+
+        if bit4_set:
+            tile_rgba = np.fliplr(tile_rgba)
+
         canvas[py:py + 64, px:px + 64] = tile_rgba
 
     im = Image.fromarray(canvas, "RGBA")
 
-    if circle_mask:
-        result = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
-        result.paste(im, mask=get_circle_mask())
-        return result
     return im
 
 
@@ -146,13 +149,17 @@ def main():
     gif_group = parser.add_mutually_exclusive_group()
     gif_group.add_argument("--videos", dest="videos", action="store_true", help="Render GIFs")
     gif_group.add_argument("--no-videos", dest="videos", action="store_false", help="Do not render GIFs")
-    parser.set_defaults(circle_mask=False, frames=False, videos=True)
+
+    fulls_group = parser.add_mutually_exclusive_group()
+    fulls_group.add_argument("--fulls", dest="fulls", action="store_true", help="Render composite 300x128 full GIFs")
+    fulls_group.add_argument("--no-fulls", dest="fulls", action="store_false", help="Do not render composite full GIFs")
+
+    parser.set_defaults(circle_mask=False, frames=False, videos=True, fulls=True)
     parser.add_argument("--anim-dump-count", type=int, default=None, metavar="N",
                         help="Only dump first N animations")
     parser.add_argument("folders", nargs="+", help="Folder containing .SPR .CEL .PAL files")
     args = parser.parse_args()
 
-    # Initialize time counters
     t_io = 0.0
     t_parsing = 0.0
     t_rendering = 0.0
@@ -167,14 +174,12 @@ def main():
                     return os.path.join(folder, file)
             raise FileNotFoundError(f"No {ext} file in {folder}")
 
-        # IO Stage 1: File discovery
         t0 = time.perf_counter()
         spr_path = find_file(".SPR")
         cel_path = find_file(".CEL")
         pal_path = find_file(".PAL")
         name = os.path.splitext(os.path.basename(spr_path))[0]
 
-        # IO Stage 2: Reading files
         with open(spr_path, "rb") as f:
             spr_data = f.read()
         with open(cel_path, "rb") as f:
@@ -183,7 +188,6 @@ def main():
             pal_data = f.read()
         t_io += (time.perf_counter() - t0)
 
-        # Parsing Stage
         t0 = time.perf_counter()
         palettes = parse_pal(pal_data)
         animations = parse_spr(spr_data)
@@ -196,50 +200,110 @@ def main():
 
         print(f"{name}: {num_cels} cels  {num_pals} palettes  {num_anims} anims  (dumping {dump_anims})")
 
-        # IO Stage 3: Directory creation
         t0 = time.perf_counter()
         out_dir = os.path.join("out", folder)
-        frames_dir = os.path.join(out_dir, "frames")
-        videos_dir = os.path.join(out_dir, "videos")
-        if args.frames: os.makedirs(frames_dir, exist_ok=True)
-        if args.videos: os.makedirs(videos_dir, exist_ok=True)
+        if args.frames:
+            os.makedirs(os.path.join(out_dir, "frames"), exist_ok=True)
+        if args.videos:
+            os.makedirs(os.path.join(out_dir, "videos"), exist_ok=True)
+        if args.fulls:
+            os.makedirs(os.path.join(out_dir, "fulls"), exist_ok=True)
         t_io += (time.perf_counter() - t0)
 
         total = 0
-        for ai, anim in tqdm(enumerate(animations[:dump_anims]), total=dump_anims):
-            pal = palettes[min(anim["pal_idx"], num_pals - 1)]
+        num_groups = (dump_anims + 7) // 8
 
-            frames_for_gif = []
-            for fi, cels in enumerate(anim["frames"]):
-                # Rendering Stage
-                t0 = time.perf_counter()
-                img = render_frame(cels, pal, cel_data, circle_mask=args.circle_mask)
-                t_rendering += (time.perf_counter() - t0)
+        for gi in tqdm(range(num_groups), desc=f"Processing {name}"):
+            if gi == 0:
+                group_name = "manifest_anim"
+            else:
+                group_name = f"full_anim_{gi:04d}"
 
-                # Saving Stage (PNG)
-                if args.frames:
+            start_ai = gi * 8
+            end_ai = min(start_ai + 8, dump_anims)
+            group_anims = animations[start_ai:end_ai]
+            if not group_anims:
+                continue
+
+            max_frames = max(len(anim["frames"]) for anim in group_anims)
+
+            full_face_frames = [Image.new("RGBA", (300, 128), (0, 0, 0, 0)) for _ in range(max_frames)]
+
+            if args.frames:
+                frames_dir = os.path.join(out_dir, "frames", group_name)
+                os.makedirs(frames_dir, exist_ok=True)
+
+            if args.videos:
+                videos_dir = os.path.join(out_dir, "videos", group_name)
+                os.makedirs(videos_dir, exist_ok=True)
+
+            for internal_idx, anim in enumerate(group_anims):
+                ai = start_ai + internal_idx
+                type_name = ANIM_TYPES[ai % 8]
+                pal = palettes[min(anim["pal_idx"], num_pals - 1)]
+
+                is_right = "right" in type_name
+                x_offset = 172 if is_right else 0
+
+                frames_for_gif = []
+                for fi, cels in enumerate(anim["frames"]):
                     t0 = time.perf_counter()
-                    img.convert("RGB").save(os.path.join(frames_dir, f"anim_{ai:03d}_frame_{fi:04d}.bmp"))
+                    img = render_frame(cels, pal, cel_data)
+                    t_rendering += (time.perf_counter() - t0)
+
+                    if args.fulls and fi < len(full_face_frames):
+                        t0 = time.perf_counter()
+                        temp_canvas = Image.new("RGBA", (300, 128), (0, 0, 0, 0))
+                        temp_canvas.paste(img, (x_offset, 0))
+                        full_face_frames[fi] = Image.alpha_composite(full_face_frames[fi], temp_canvas)
+                        t_rendering += (time.perf_counter() - t0)
+
+                    if args.frames:
+                        t0 = time.perf_counter()
+                        if gi == 0:
+                            frame_filename = f"{ai}_frame_{fi:04d}.bmp"
+                        else:
+                            frame_filename = f"{type_name}_{ai:04d}_frame_{fi:04d}.bmp"
+                        img.convert("RGB").save(os.path.join(frames_dir, frame_filename))
+                        t_saving += (time.perf_counter() - t0)
+
+                    frames_for_gif.append(img)
+                    total += 1
+
+                if frames_for_gif and args.videos:
+                    t0 = time.perf_counter()
+                    if gi == 0:
+                        gif_filename = f"{ai}.gif"
+                    else:
+                        gif_filename = f"{type_name}_{ai:04d}.gif"
+
+                    gif_path = os.path.join(videos_dir, gif_filename)
+                    frames_for_gif[0].save(
+                        gif_path,
+                        save_all=True,
+                        append_images=frames_for_gif[1:],
+                        duration=66,
+                        loop=0,
+                        disposal=2
+                    )
                     t_saving += (time.perf_counter() - t0)
 
-                frames_for_gif.append(img)
-                total += 1
-
-            # Saving Stage (GIF)
-            if frames_for_gif and args.videos:
+            if args.fulls and full_face_frames:
                 t0 = time.perf_counter()
-                gif_path = os.path.join(videos_dir, f"anim_{ai:04d}.gif")
-                frames_for_gif[0].save(
+                gif_filename = f"{group_name}.gif"
+                gif_path = os.path.join(out_dir, "fulls", gif_filename)
+
+                full_face_frames[0].save(
                     gif_path,
                     save_all=True,
-                    append_images=frames_for_gif[1:],
+                    append_images=full_face_frames[1:],
                     duration=66,
                     loop=0,
                     disposal=2
                 )
                 t_saving += (time.perf_counter() - t0)
 
-        print(f"\nDone - {total} frames & {len(animations[:dump_anims])} GIFs → {out_dir}/")
+        print(f"\nDone - {total} frames processed → {out_dir}/")
 
     t_total = time.perf_counter() - t_start
 
