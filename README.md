@@ -1,9 +1,9 @@
 # Furby Connect SPR/CEL/PAL converter
 A simple python project to convert Furby Connect's graphical assets to PNGs and/or GIFs
 
-![Furby connect eye](out/Base/fulls/full_anim_0002.gif)
+![Furby connect eye](out/Furby/Furby-Files/Furby-NAND/Personalities/Base/fulls/full_anim_0002.gif)
 
-![Furby connect DJ eye](out/DJ/fulls/full_anim_0001.gif)
+![Furby connect DJ eye](out/Furby/Furby-Files/Furby-NAND/Personalities/DJ/fulls/full_anim_0001.gif)
 
 ## Extracted assets **for _all_ six personalities** (Base, Cat, DJ, Ninja, Pirate, PopStar, Princess) are in the out/Furby/Furby-Files/Furby-NAND/Personalities/[PersonalityName]/fulls folder!
 
