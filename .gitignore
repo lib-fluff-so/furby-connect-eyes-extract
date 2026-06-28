@@ -216,3 +216,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# User-specific PyCharm settings (Must always be ignored)
+.idea/**workspace.xml
+.idea/**tasks.xml
+.idea/**usage.statistics.xml
+.idea/**dictionaries
+.idea/**shelf/
+
+# Crash dumps or logs
+.idea/**webServers.xml
+.idea/**dataSources.xml
+.idea/**dataSources.local.xml
+.idea/**sqlDataSources.xml
+.idea/**dynamic.xml
