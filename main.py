@@ -139,22 +139,17 @@ def render_frame(cel_info, palette, cel_data):
 
 def main():
     parser = argparse.ArgumentParser(description="Furby Connect eye renderer")
-    mask_group = parser.add_mutually_exclusive_group()
-    mask_group.add_argument("--circle-mask", dest="circle_mask", action="store_true", help="Apply circular mask")
-    mask_group.add_argument("--no-circle-mask", dest="circle_mask", action="store_false",
-                            help="Do not apply circular mask")
     png_group = parser.add_mutually_exclusive_group()
     png_group.add_argument("--frames", dest="frames", action="store_true", help="Render PNGs")
     png_group.add_argument("--no-frames", dest="frames", action="store_false", help="Do not render PNGs")
     gif_group = parser.add_mutually_exclusive_group()
     gif_group.add_argument("--videos", dest="videos", action="store_true", help="Render GIFs")
     gif_group.add_argument("--no-videos", dest="videos", action="store_false", help="Do not render GIFs")
-
     fulls_group = parser.add_mutually_exclusive_group()
     fulls_group.add_argument("--fulls", dest="fulls", action="store_true", help="Render composite 300x128 full GIFs")
     fulls_group.add_argument("--no-fulls", dest="fulls", action="store_false", help="Do not render composite full GIFs")
 
-    parser.set_defaults(circle_mask=False, frames=False, videos=True, fulls=True)
+    parser.set_defaults(frames=False, videos=True, fulls=True)
     parser.add_argument("--anim-dump-count", type=int, default=None, metavar="N",
                         help="Only dump first N animations")
     parser.add_argument("folders", nargs="+", help="Folder containing .SPR .CEL .PAL files")

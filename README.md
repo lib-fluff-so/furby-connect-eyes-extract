@@ -5,7 +5,7 @@ A simple python project to convert Furby Connect's graphical assets to PNGs and/
 
 ![Furby connect DJ eye](out/DJ/fulls/full_anim_0001.gif)
 
-## Extracted assets **for _all_ six personalities** (Base, Cat, DJ, Ninja, Pirate, PopStar, Princess) are in the out/PersonalityName/fulls folder!
+## Extracted assets **for _all_ six personalities** (Base, Cat, DJ, Ninja, Pirate, PopStar, Princess) are in the out/Furby/Furby-Files/Furby-NAND/Personalities/[PersonalityName]/fulls folder!
 
 | Personality | Animations |
 |:------------|:-----------|
@@ -25,12 +25,12 @@ Even knowing that, it's sad Hasbro bundled so little animations in those additio
     <summary>Things for developers</summary>
 
 If you want to use this script, 
-- Clone the repo using `git clone repo-address`
+- Clone the repo using `git clone https://github.com/lib-fluff-so/furby-connect-eyes-extract`
 - Do `git submodule update --init --recursive`
 - install numpy, tqdm and Pillow using `pip install numpy tqdm Pillow`
 
 ```
-usage: main.py [-h] [--circle-mask | --no-circle-mask] [--frames |
+usage: main.py [-h] [--frames |
                --no-frames] [--videos | --no-videos] [--fulls | --no-fulls]
                [--anim-dump-count N]
                folders [folders ...]
